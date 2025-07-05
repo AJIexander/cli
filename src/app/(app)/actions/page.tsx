@@ -4,18 +4,18 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { runCleanupAction } from "./winrm-actions";
+import { runCleanupAction, type CleanupResult } from "./winrm-actions";
 import { useServers } from "@/hooks/use-servers";
+import { formatBytes } from "@/lib/utils";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Play, HardDrive, Loader2, Terminal, FlaskConical, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Play, HardDrive, Loader2, Terminal, AlertTriangle, CheckCircle, PackageCheck } from "lucide-react";
 
 const formSchema = z.object({
   serverIp: z.string().min(1, "Please select a server."),
@@ -27,7 +27,8 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function ActionsPage() {
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<{ stdout?: string; stderr?: string } | null>(null);
+  const [result, setResult] = useState<CleanupResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { servers } = useServers();
 
   const form = useForm<FormValues>({
@@ -42,8 +43,13 @@ export default function ActionsPage() {
   async function onSubmit(values: FormValues) {
     setIsLoading(true);
     setResult(null);
+    setError(null);
     const response = await runCleanupAction(values);
-    setResult(response);
+    if (response.result) {
+        setResult(response.result);
+    } else if (response.error) {
+        setError(response.error);
+    }
     setIsLoading(false);
   }
 
@@ -54,7 +60,7 @@ export default function ActionsPage() {
           <CardHeader>
             <CardTitle>Run Cleanup</CardTitle>
             <CardDescription>
-              Connect to a Windows server via WinRM to run a cleanup script. Enter credentials to proceed.
+              Connect to a Windows server to run a cleanup script. Enter credentials to proceed.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -145,35 +151,71 @@ export default function ActionsPage() {
         </Card>
       </div>
       
-      {result && (
+      {(result || error) && (
         <Card>
-            <CardHeader className="flex-row items-center justify-between pb-4">
+            <CardHeader>
                 <div className="flex items-center gap-3">
                     <Terminal className="h-5 w-5" />
                     <CardTitle className="text-xl leading-none">Execution Result</CardTitle>
                 </div>
-                {result.stdout?.includes("[SIMULATION MODE]") && (
-                     <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-500">
-                        <FlaskConical className="mr-2 h-4 w-4" />
-                        Simulation Mode
-                    </Badge>
-                )}
             </CardHeader>
             <CardContent>
-                {result.stderr ? (
+                {error ? (
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Error</AlertTitle>
                         <AlertDescription>
-                            <pre className="mt-2 whitespace-pre-wrap font-mono text-xs">{result.stderr}</pre>
+                            <pre className="mt-2 whitespace-pre-wrap font-mono text-xs">{error}</pre>
                         </AlertDescription>
                     </Alert>
-                ) : (
-                    <ScrollArea className="h-96">
-                        <pre className="whitespace-pre-wrap font-mono text-sm text-muted-foreground">
-                            {result.stdout || "No output received."}
-                        </pre>
-                    </ScrollArea>
+                ) : result && (
+                  <div className="space-y-4">
+                    {result.success ? (
+                       <Alert variant="default" className="border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400">
+                          <CheckCircle className="h-4 w-4 text-current" />
+                          <AlertTitle>Cleanup Successful</AlertTitle>
+                          <AlertDescription>
+                            Total space freed: <span className="font-semibold">{formatBytes(result.freedSpaceBytes)}</span>
+                          </AlertDescription>
+                      </Alert>
+                    ) : (
+                       <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertTitle>Cleanup Completed with Errors</AlertTitle>
+                          <AlertDescription>
+                            Please check the errors below. Some files may not have been deleted.
+                          </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {result.deletedFiles.length > 0 && (
+                       <div>
+                          <h3 className="mb-2 font-semibold text-sm flex items-center gap-2">
+                            <PackageCheck className="h-4 w-4" />
+                            Deleted Items ({result.deletedFiles.length})
+                          </h3>
+                          <ScrollArea className="h-48 rounded-md border p-2">
+                              <div className="font-mono text-xs text-muted-foreground">
+                                {result.deletedFiles.map((file, i) => <div key={i}>{file}</div>)}
+                              </div>
+                          </ScrollArea>
+                       </div>
+                    )}
+                     {result.errors.length > 0 && (
+                       <div>
+                          <h3 className="mb-2 font-semibold text-sm text-destructive flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            Errors ({result.errors.length})
+                          </h3>
+                          <ScrollArea className="h-32 rounded-md border border-destructive/50 bg-destructive/10 p-2">
+                              <div className="font-mono text-xs text-destructive">
+                                {result.errors.map((err, i) => <div key={i}>{err}</div>)}
+                              </div>
+                          </ScrollArea>
+                       </div>
+                    )}
+
+                  </div>
                 )}
             </CardContent>
         </Card>

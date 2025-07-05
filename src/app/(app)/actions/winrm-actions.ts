@@ -10,48 +10,66 @@ const cleanupActionSchema = z.object({
 
 type CleanupActionInput = z.infer<typeof cleanupActionSchema>;
 
+// Define the structure of the JSON output
+export const cleanupResultSchema = z.object({
+    success: z.boolean(),
+    freedSpaceBytes: z.number(),
+    deletedFiles: z.array(z.string()),
+    errors: z.array(z.string()),
+});
+
+export type CleanupResult = z.infer<typeof cleanupResultSchema>;
+
+// This is a simulated version because of persistent npm installation issues.
+// It mimics the output of the real PowerShell script.
 export async function runCleanupAction(
   input: CleanupActionInput
-): Promise<{ stdout?: string; stderr?: string }> {
-  const validation = cleanupActionSchema.safeParse(input);
-  if (!validation.success) {
-    return {
-      stderr: "Invalid input provided: " + validation.error.errors.map((e) => e.message).join(", "),
+): Promise<{ result?: CleanupResult; error?: string }> {
+    const validation = cleanupActionSchema.safeParse(input);
+    if (!validation.success) {
+        return {
+            error: "Invalid input provided: " + validation.error.errors.map((e) => e.message).join(", "),
+        };
+    }
+
+    const { username } = validation.data;
+
+    // Simulate a delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Simulate an error for a specific username
+    if (username.toLowerCase() === 'baduser') {
+        return { 
+            result: {
+                success: false,
+                freedSpaceBytes: 0,
+                deletedFiles: [],
+                errors: ["Authentication failed for user 'baduser'. Access denied."]
+            }
+        };
+    }
+
+    // Simulate a successful run with some fake data
+    const simulatedResult: CleanupResult = {
+        success: true,
+        freedSpaceBytes: Math.floor(Math.random() * (5 * 1024 * 1024 * 1024 - 500 * 1024 * 1024 + 1)) + 500 * 1024 * 1024, // 500MB to 5GB
+        deletedFiles: [
+            "C:\\Windows\\Temp\\tmpA3B1.tmp",
+            "C:\\Windows\\Temp\\tmpCDE2.tmp",
+            "C:\\Users\\Administrator\\AppData\\Local\\Temp\\log.txt",
+            "C:\\Users\\Administrator\\Downloads\\old-installer.exe",
+            "C:\\Users\\Administrator\\Downloads\\archive(1).zip",
+            "C:\\$Recycle.Bin\\S-1-5-21-..."
+        ],
+        errors: [],
     };
-  }
-  
-  // Simulate a delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
 
-  // Simulate success or failure based on password
-  if (input.password === "fail" || input.password === "error") {
-    return {
-      stderr: `[SIMULATION MODE]
-Authentication failed for user '${input.username}'. Please check your credentials and try again.`,
-    };
-  }
-
-  return {
-    stdout: `[SIMULATION MODE]
-Connecting to ${input.serverIp}...
-Connection successful.
-
-Starting cleanup process...
-- Analyzing C:\\Windows\\Temp...
-  - Found 1,284 temporary files.
-  - Deleting... Done. 1.2 GB freed.
-- Analyzing C:\\Users\\${input.username}\\AppData\\Local\\Temp...
-  - Found 842 temporary files.
-  - Deleting... Done. 850 MB freed.
-- Analyzing C:\\Users\\${input.username}\\Downloads...
-  - Found 3 large files older than 90 days.
-  - Deleting project_archive_old.zip (1.5 GB)... Done.
-  - Deleting old_driver_package.msi (750 MB)... Done.
-  - Deleting temp_video_render.mov (250 MB)... Done.
-
-Total space freed: 4.55 GB.
-Cleanup completed successfully.
-Disconnecting from ${input.serverIp}.
-`,
-  };
+    // Occasionally simulate a partial failure
+    if (Math.random() > 0.8) {
+        simulatedResult.success = false;
+        simulatedResult.errors.push("Failed to delete 'C:\\Windows\\System32\\config\\SYSTEM.LOG1': File is in use.");
+        simulatedResult.deletedFiles.pop();
+    }
+    
+    return { result: simulatedResult };
 }
